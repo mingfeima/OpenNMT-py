@@ -1,6 +1,8 @@
 from __future__ import division
 
 import os
+import math
+import random
 
 import onmt
 import onmt.Markdown
@@ -10,6 +12,7 @@ import argparse
 import torch
 import torch.nn as nn
 from torch import cuda
+import torch.distributed as dist
 
 parser = argparse.ArgumentParser(description='train.py')
 onmt.Markdown.add_md_help_argument(parser)
@@ -111,7 +114,7 @@ parser.add_argument('-position_encoding', action='store_true',
 parser.add_argument('-share_decoder_embeddings', action='store_true',
                     help='Share the word and softmax embeddings for decoder.')
 
-parser.add_argument('-curriculum', action="store_true",
+parser.add_argument('-curriculum', type=int, default=0,
                     help="""For this many epochs, order the minibatches based
                     on source sequence length. Sometimes setting this to 1 will
                     increase convergence speed.""")
@@ -170,12 +173,25 @@ parser.add_argument('-seed', type=int, default=-1,
                     help="""Random seed used for the experiments
                     reproducibility.""")
 
-opt = parser.parse_args()
+# Distributed learning
+parser.add_argument('-dist', action="store_true",
+                    help="Enable distributed learning")
 
-print(opt)
+parser.add_argument('-dist_backend', type=str, default='mpi',
+                    help="Distributed backend")
+
+parser.add_argument('-debug_print', action="store_true",
+                    help="Enable debug print for distributed learning")
+
+opt = parser.parse_args()
 
 if opt.seed > 0:
     torch.manual_seed(opt.seed)
+
+# Object for distributed learning, activated when -dist is available and world size > 1
+dist = onmt.Dist(opt.dist, opt.dist_backend, opt.debug_print)
+
+print(opt)
 
 if torch.cuda.is_available() and not opt.gpus:
     print("WARNING: You have a CUDA device, should run with -gpus 0")
@@ -184,7 +200,6 @@ if opt.gpus:
     cuda.set_device(opt.gpus[0])
     if opt.seed > 0:
         torch.cuda.manual_seed(opt.seed)
-
 
 # Set up the Crayon logging server.
 if opt.log_server != "":
@@ -237,11 +252,20 @@ def trainModel(model, trainData, validData, dataset, optim):
         # Shuffle mini batch order.
         batchOrder = torch.randperm(len(trainData))
 
+        # Sync batchOrder across ranks
+        dist.broadcast(batchOrder)
+
+        # Sync parameter acropss ranks
+        dist.syncParams(model.parameters())
+
         total_stats = onmt.Loss.Statistics()
         report_stats = onmt.Loss.Statistics()
 
-        for i in range(len(trainData)):
-            batchIdx = batchOrder[i] if epoch > opt.curriculum else i
+        numIterations = math.ceil(len(trainData) / dist.size)
+        for i in range(numIterations):
+            idx = i * dist.size + dist.rank
+            idx = idx if idx < len(trainData) else random.randrange(len(trainData))
+            batchIdx = batchOrder[idx] if epoch > opt.curriculum else idx
             batch = trainData[batchIdx]
             target_size = batch.tgt.size(0)
 
@@ -263,6 +287,9 @@ def trainModel(model, trainData, validData, dataset, optim):
 
                 torch.autograd.backward(inputs, grads)
 
+                # Accumulate gradients from all ranks
+                dist.accGradParams(model.parameters())
+
                 # Update the parameters.
                 optim.step()
                 total_stats.update(batch_stats)
@@ -272,9 +299,9 @@ def trainModel(model, trainData, validData, dataset, optim):
 
             report_stats.n_src_words += batch.lengths.data.sum()
 
-            if i % opt.log_interval == -1 % opt.log_interval:
-                report_stats.output(epoch, i+1, len(trainData),
-                                    total_stats.start_time)
+            if i % opt.log_interval == -1 % opt.log_interval or i == numIterations - 1:
+                report_stats.output(epoch, i+1, numIterations,
+                                    total_stats.start_time, optim)
                 if opt.log_server:
                     report_stats.log("progress", experiment, optim)
                 report_stats = onmt.Loss.Statistics()
@@ -454,9 +481,9 @@ def main():
         elif 'decoder' in name:
             dec += param.nelement()
         else:
-            print(name, param.nelement())
-    print('encoder: ', enc)
-    print('decoder: ', dec)
+            print('%s: %d' % (name, param.nelement()))
+    print('encoder: %d' % enc)
+    print('decoder: %d' % dec)
 
     trainModel(model, trainData, validData, dataset, optim)
 
