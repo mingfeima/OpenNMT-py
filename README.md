@@ -67,6 +67,7 @@ python train.py -data data/demo.train.pt -save_model demo-model
 To run with multi node with mpirun on 4 nodes
 ```
 mpirun -N 4 python train.py -data data/demo.train.pt -save_model demo-model -dist
+```
 
 The main train command is quite simple. Minimally it takes a data file
 and a save file.  This will run the default model, which consists of a
