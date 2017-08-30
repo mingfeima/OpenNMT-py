@@ -65,7 +65,7 @@ python train.py -data data/demo.train.pt -save_model demo-model
 ```
 
 To run with multi node with mpirun on 4 nodes
-```
+```bash
 mpirun -N 4 python train.py -data data/demo.train.pt -save_model demo-model -dist
 ```
 
@@ -73,6 +73,9 @@ The main train command is quite simple. Minimally it takes a data file
 and a save file.  This will run the default model, which consists of a
 2-layer LSTM with 500 hidden units on both the encoder/decoder. You
 can also add `-gpus 1` to use (say) GPU 1.
+Use mpirun/mpiexec to launch a multi node task. By default only print
+from master node will be printed, you can add `-debug_print` to enable
+prints from all the nodes.
 
 ## Step 3: Translate
 

@@ -3,10 +3,6 @@ import os
 import torch
 import torch.distributed as dist
 
-"""
- Class for managing distibuted learning.
-"""
-
 def allReduceScalar(s):
     "AllReduces scalar accross all ranks."
     if dist.get_world_size() > 1:
@@ -17,6 +13,9 @@ def allReduceScalar(s):
         return s
 
 class Dist(object):
+    """
+    Class for managing distibuted learning.
+    """
     def __init__(self, dist_enable, backend, debug_print=False):
 
         self.dist_enable = dist_enable
