@@ -436,6 +436,9 @@ def train_opts(parser):
                        help="Sample rate.")
     group.add_argument('-window_size', type=float, default=.02,
                        help="Window size for spectrogram in seconds.")
+    # Profiler
+    group.add_argument('-prof', action='store_true',
+                      help="Enable autograd profiler")
 
     # Option most relevant to image input
     group.add_argument('-image_channel_size', type=int, default=3,

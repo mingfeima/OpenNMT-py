@@ -137,8 +137,15 @@ def main(opt, device_id):
         lazily_load_dataset("valid", opt), fields, opt, is_train=False)
 
     # Do training.
-    trainer.train(train_iter_fct, valid_iter_fct, opt.train_steps,
-                  opt.valid_steps)
+    if opt.prof:
+        print("Enable autograd profiler")
+        with torch.autograd.profiler.profile() as prof:
+            trainer.train(train_iter_fct, valid_iter_fct, opt.train_steps,
+                          opt.valid_steps)
+        prof.export_chrome_trace("prof.json")
+    else:
+        trainer.train(train_iter_fct, valid_iter_fct, opt.train_steps,
+                      opt.valid_steps)
 
     if opt.tensorboard:
         trainer.report_manager.tensorboard_writer.close()
