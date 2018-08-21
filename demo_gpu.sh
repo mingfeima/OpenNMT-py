@@ -1,5 +1,3 @@
-#!bin/sh
-
 ARGS=""
 if [ "$1" == "prof" ]; then
     ARGS="$ARGS -prof"
